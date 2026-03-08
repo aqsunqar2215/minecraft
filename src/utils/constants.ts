@@ -1,0 +1,49 @@
+export const CHUNK_SIZE = 16;
+export const WORLD_HEIGHT = 256;
+export const SEA_LEVEL = 62;
+
+export const FIXED_TIMESTEP_SECONDS = 1 / 20;
+export const MAX_FRAME_SECONDS = 0.25;
+export const HAND_MINING_SECONDS_PER_HARDNESS = 0.4;
+export const MINING_CRACK_STAGES = 10;
+export const ITEM_DROP_SIZE = 0.28;
+export const ITEM_DROP_LIFETIME_SECONDS = 300;
+export const ITEM_DROP_PICKUP_DELAY_SECONDS = 0.2;
+export const ITEM_DROP_PICKUP_RADIUS = 1.9;
+export const ITEM_DROP_ATTRACT_RADIUS = 4;
+export const ITEM_DROP_GRAVITY = 18;
+
+export const WALK_SPEED = 4.317;
+export const SPRINT_SPEED = 5.612;
+export const SWIM_SPEED = 3.1;
+export const JUMP_VELOCITY = 8.9;
+export const GRAVITY = 32;
+export const MAX_FALL_SPEED = 50;
+export const AIR_CONTROL = 0.18;
+export const GROUND_ACCELERATION = 18;
+export const WATER_ACCELERATION = 10;
+export const WATER_BUOYANCY = 4.8;
+export const WATER_CURRENT_STRENGTH = 1.9;
+export const WATER_DRAG = 3.2;
+export const WATER_GRAVITY_SCALE = 0.5;
+export const WATER_MAX_RISE_SPEED = 2.4;
+export const WATER_MAX_SINK_SPEED = 6.2;
+export const WATER_MAX_SWIM_RISE_SPEED = 6.2;
+export const WATER_LEDGE_STEP_HEIGHT = 1.05;
+export const WATER_SURFACE_FLOAT_ACCELERATION = 24;
+export const WATER_SURFACE_FLOAT_DEPTH = 0.16;
+export const WATER_SURFACE_HEIGHT = 0.78;
+export const WATER_SWIM_DOWN_ACCELERATION = 22;
+export const WATER_SWIM_UP_ACCELERATION = 28;
+export const WATER_SWIM_ACTIVATION_SUBMERSION = 0.06;
+export const WATER_TEXTURE_FLOW_SPEED_U = 0.18;
+export const WATER_TEXTURE_FLOW_SPEED_V = -0.06;
+export const WATER_VERTICAL_DRAG = 4.4;
+
+export const PLAYER_WIDTH = 0.6;
+export const PLAYER_HEIGHT = 1.8;
+export const PLAYER_EYE_HEIGHT = 1.62;
+export const MOUSE_SENSITIVITY = 0.0022;
+
+export const INITIAL_RENDER_DISTANCE = 5;
+export const SKY_COLOR = 0x7db7ff;

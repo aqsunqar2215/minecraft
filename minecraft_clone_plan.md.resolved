@@ -1,0 +1,475 @@
+# 🎮 WebCraft — Web-Based Minecraft Clone
+
+## Implementation Plan
+
+> **Stack**: Vite + TypeScript + Three.js (vanilla) + simplex-noise
+> **No game engines** — pure WebGL via Three.js
+
+---
+
+## 🏗️ Architecture Overview
+
+```mermaid
+graph TD
+    A[Game Loop] --> B[Physics Tick - 20fps]
+    A --> C[Render Tick - 60fps]
+    B --> D[Player Movement]
+    B --> E[Entity AI]
+    B --> F[Collision Detection]
+    C --> G[Chunk Meshing]
+    C --> H[Scene Rendering]
+    C --> I[UI Overlay]
+    
+    J[World Manager] --> K[Chunk Generator]
+    J --> L[Block Registry]
+    K --> M[Terrain Noise]
+    K --> N[Cave Carving]
+    K --> O[Ore Placement]
+    K --> P[Tree Generation]
+    
+    Q[Player] --> R[Inventory]
+    Q --> S[Equipment]
+    Q --> T[Crafting]
+    R --> U[Hotbar 9 slots]
+    R --> V[Storage 27 slots]
+    T --> W[2x2 Player Grid]
+    T --> X[3x3 Workbench Grid]
+```
+
+---
+
+## 📦 Phase 1: Core Engine Foundation
+
+### 1.1 Project Setup
+- Vite + TypeScript project
+- Three.js setup (WebGLRenderer, PerspectiveCamera, Scene)
+- Game loop with fixed physics timestep (50ms / 20 TPS)
+- Input manager (keyboard + mouse)
+
+### 1.2 Block System
+- `BlockRegistry` — all block types with properties
+- Block types:
+
+| Block | ID | Hardness | Tool | Drop |
+|-------|-----|----------|------|------|
+| Air | 0 | — | — | — |
+| Grass | 1 | 0.6 | Shovel | Dirt |
+| Dirt | 2 | 0.5 | Shovel | Dirt |
+| Stone | 3 | 1.5 | Pickaxe | Cobblestone |
+| Cobblestone | 4 | 2.0 | Pickaxe | Cobblestone |
+| Oak Log | 5 | 2.0 | Axe | Oak Log |
+| Oak Leaves | 6 | 0.2 | Shears | — |
+| Oak Planks | 7 | 2.0 | Axe | Oak Planks |
+| Bedrock | 8 | ∞ | — | — |
+| Sand | 9 | 0.5 | Shovel | Sand |
+| Gravel | 10 | 0.6 | Shovel | Gravel |
+| Coal Ore | 11 | 3.0 | Pickaxe | Coal |
+| Iron Ore | 12 | 3.0 | Pickaxe | Iron Ore |
+| Gold Ore | 13 | 3.0 | Pickaxe | Gold Ore |
+| Diamond Ore | 14 | 3.0 | Pickaxe | Diamond Ore |
+| Water | 15 | — | — | — |
+| Glass | 16 | 0.3 | — | — |
+| Crafting Table | 17 | 2.5 | Axe | Crafting Table |
+| Furnace | 18 | 3.5 | Pickaxe | Furnace |
+| Chest | 19 | 2.5 | Axe | Chest |
+
+### 1.3 Chunk System
+- Chunk size: **16 × 256 × 16** blocks
+- Flat 1D array storage: `blocks[x + z*16 + y*16*16]`
+- Chunk coordinates: world position ÷ 16
+- Render distance: 8 chunks (configurable)
+
+### 1.4 Greedy Meshing
+- Only generate faces between solid and non-solid blocks
+- Merge adjacent same-type faces into larger quads (greedy mesh)
+- Per-chunk `BufferGeometry` with:
+  - Position attribute
+  - Normal attribute
+  - UV attribute (texture atlas coordinates)
+  - AO (ambient occlusion) from neighboring blocks
+
+### 1.5 Texture Atlas
+- 16×16 pixel block textures
+- Single atlas texture (256×256 or 512×512)
+- UV mapping per block face (top, bottom, sides can differ)
+
+### 1.6 Player Controller
+- **PointerLock API** for mouse capture
+- First-person camera
+- WASD movement (walk, sprint with Shift)
+- Space = Jump, gravity = 32 blocks/s²
+- AABB collision detection against blocks
+- Walking speed: 4.317 blocks/s, Sprint: 5.612 blocks/s
+
+---
+
+## 📦 Phase 2: Block Interaction
+
+### 2.1 Raycasting
+- Cast ray from camera center
+- Max reach: 5 blocks
+- Highlight targeted block face
+- Show wireframe outline on target block
+
+### 2.2 Block Breaking
+- Left click = start mining
+- Mining progress bar overlay
+- **Break time** = `blockHardness × toolMultiplier`
+- Tool multipliers:
+
+| Tool Tier | Multiplier |
+|-----------|------------|
+| Hand | ×1.0 |
+| Wood | ×2.0 |
+| Stone | ×4.0 |
+| Iron | ×6.0 |
+| Diamond | ×8.0 |
+
+- Breaking animation: 10 stages (crack overlay texture)
+- Block particles on break (3D particles flying out)
+- Drop item entity on break
+
+### 2.3 Block Placing
+- Right click = place block from hotbar
+- Place against the face being looked at
+- Cannot place inside player hitbox
+- Deduct 1 from hotbar stack
+
+### 2.4 Item Entities
+- Dropped items float and rotate in world
+- Picked up when player walks near (1.5 block radius)
+- Auto-stack into inventory
+- Despawn after 5 minutes
+
+---
+
+## 📦 Phase 3: World Generation
+
+### 3.1 Terrain Height
+```
+height(x, z) = baseHeight 
+  + noise2D(x/100, z/100) * 30     // Mountains
+  + noise2D(x/50, z/50) * 15       // Hills  
+  + noise2D(x/25, z/25) * 5        // Details
+```
+- Base height: 64
+- Min: ~40, Max: ~120, Sea level: 62
+
+### 3.2 Block Layers
+```
+y == height        → Grass (or Sand if near water)
+height-4 < y < height → Dirt
+y < height-4       → Stone
+y == 0              → Bedrock
+y < 5               → Bedrock (random)
+```
+
+### 3.3 Cave Generation
+- 3D Simplex noise with threshold:
+  ```
+  cave(x, y, z) = noise3D(x/30, y/30, z/30)
+  if cave > 0.6 → carve out (set to Air)
+  ```
+- Don't carve surface blocks (y > height - 3)
+- Lava at y < 10 (stretch goal)
+
+### 3.4 Ore Generation
+| Ore | Min Y | Max Y | Vein Size | Frequency |
+|-----|-------|-------|-----------|-----------|
+| Coal | 0 | 128 | 8-12 | Common |
+| Iron | 0 | 64 | 4-8 | Moderate |
+| Gold | 0 | 32 | 4-6 | Rare |
+| Diamond | 0 | 16 | 2-4 | Very Rare |
+
+- Ores only replace Stone blocks
+- Vein algorithm: random walk from seed point
+
+### 3.5 Tree Generation
+- Oak trees on grass blocks
+- Probability: ~1 per 50 surface blocks
+- Structure:
+  - Trunk: 4-6 blocks tall (Oak Log)
+  - Crown: 5×5×3 leaf dome on top
+  - No trees too close together (min 3 blocks apart)
+
+### 3.6 Water
+- Water fills all blocks below sea level (y=62) that are Air
+- Water is translucent (alpha blending)
+- Simple side faces with slightly darker shade
+- Swimming mechanics: slower movement, floating
+
+### 3.7 Clouds
+- 2D layer at y=128
+- Semi-transparent white blocks
+- Slowly drifting (animated UV offset)
+- Generated from 2D noise
+
+---
+
+## 📦 Phase 4: Inventory System
+
+### 4.1 Inventory Layout
+```
+┌──────────────────────────────────────────────┐
+│                Inventory                      │
+├──────────────────────────────────────────────┤
+│  ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐│
+│  │  │ │  │ │  │ │  │ │  │ │  │ │  │ │  │ │  ││  ← Storage (3 rows × 9)
+│  └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘│
+│  ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐│
+│  │  │ │  │ │  │ │  │ │  │ │  │ │  │ │  │ │  ││
+│  └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘│
+│  ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐│
+│  │  │ │  │ │  │ │  │ │  │ │  │ │  │ │  │ │  ││
+│  └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘│
+├──────────────────────────────────────────────┤
+│  ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐ ┌──┐│
+│  │1 │ │2 │ │3 │ │4 │ │5 │ │6 │ │7 │ │8 │ │9 ││  ← Hotbar
+│  └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘ └──┘│
+└──────────────────────────────────────────────┘
+```
+
+### 4.2 Item System
+- Each slot: `{ itemId: number, count: number, durability?: number }`
+- Max stack size: 64 (tools/armor = 1)
+- Drag-and-drop with mouse
+- Shift+click = quick move
+- E key = toggle inventory
+- 1-9 keys = select hotbar slot
+- Mouse scroll = cycle hotbar
+
+### 4.3 HUD
+- Hotbar always visible at bottom center
+- Health bar (10 hearts)
+- Crosshair at center
+- Selected slot highlighted
+
+---
+
+## 📦 Phase 5: Crafting System
+
+### 5.1 Crafting Grid
+- **Player inventory**: 2×2 crafting grid
+- **Crafting Table**: 3×3 crafting grid
+
+### 5.2 Core Recipes
+
+#### Basic
+| Recipe | Grid | Result |
+|--------|------|--------|
+| Planks | 1 Log → | 4 Oak Planks |
+| Sticks | 2 Planks (vertical) | 4 Sticks |
+| Crafting Table | 4 Planks (2×2) | 1 Crafting Table |
+| Furnace | 8 Cobblestone (ring) | 1 Furnace |
+| Chest | 8 Planks (ring) | 1 Chest |
+| Torch | Coal + Stick (vertical) | 4 Torches |
+
+#### Tools (3×3 grid)
+```
+Pickaxe:          Axe:            Shovel:          Sword:
+[M][M][M]         [M][M][ ]       [ ][M][ ]        [ ][M][ ]
+[ ][S][ ]          [M][S][ ]       [ ][S][ ]        [ ][S][ ]
+[ ][S][ ]          [ ][S][ ]       [ ][S][ ]        [ ][S][ ]
+
+M = Material (Planks/Cobble/Iron/Diamond)
+S = Stick
+```
+
+#### Armor (3×3 grid)
+```
+Helmet:           Chestplate:      Leggings:        Boots:
+[M][M][M]         [M][ ][M]        [M][M][M]        [ ][ ][ ]
+[M][ ][M]         [M][M][M]        [M][ ][M]        [M][ ][M]
+[ ][ ][ ]         [M][M][M]        [M][ ][M]        [M][ ][M]
+```
+
+### 5.3 Recipe Matching
+- Pattern matching: compare grid contents against known recipes
+- Support mirrored recipes (axe can be flipped)
+- Support shapeless recipes (e.g., mushroom stew)
+- Real-time preview of result
+
+---
+
+## 📦 Phase 6: Tools & Weapons
+
+### 6.1 Tool Types & Stats
+
+| Tool | Effect |
+|------|--------|
+| Pickaxe | Mines stone/ore faster |
+| Axe | Chops wood faster |
+| Shovel | Digs dirt/sand/gravel faster |
+| Sword | More damage to mobs |
+
+### 6.2 Tier Progression
+
+| Tier | Durability | Speed | Damage | Material |
+|------|-----------|-------|--------|----------|
+| Wood | 59 | ×2 | 4 | Oak Planks |
+| Stone | 131 | ×4 | 5 | Cobblestone |
+| Iron | 250 | ×6 | 6 | Iron Ingot |
+| Diamond | 1561 | ×8 | 7 | Diamond |
+
+### 6.3 Durability
+- Each use costs 1 durability
+- Durability bar shows under item in hotbar
+- Tool breaks at 0 durability (removed from inventory)
+
+---
+
+## 📦 Phase 7: Armor System
+
+### 7.1 Armor Stats
+
+| Tier | Helmet | Chest | Legs | Boots | Total |
+|------|--------|-------|------|-------|-------|
+| Leather | 1 | 3 | 2 | 1 | 7 |
+| Iron | 2 | 6 | 5 | 2 | 15 |
+| Diamond | 3 | 8 | 6 | 3 | 20 |
+
+### 7.2 Equipment Slots
+- 4 dedicated slots in inventory (helmet, chest, legs, boots)
+- Damage reduction = armor_points × 4%
+- Visual indicator of equipped armor
+
+---
+
+## 📦 Phase 8: Animals (Mobs)
+
+### 8.1 Animal Types
+
+| Animal | Health | Drops | Behavior |
+|--------|--------|-------|----------|
+| Cow | 10 | Leather, Raw Beef | Wander, flee when hit |
+| Pig | 10 | Raw Porkchop | Wander, flee when hit |
+| Sheep | 8 | Wool, Raw Mutton | Wander, flee when hit |
+
+### 8.2 AI System
+- **Wander**: Pick random direction, walk 3-8 blocks, pause
+- **Flee**: Run away from attacker for 3 seconds
+- **Pathfinding**: Simple: check if next block is walkable, jump 1-block heights
+- **Spawning**: Natural spawning on grass in loaded chunks (max 10 per chunk)
+
+### 8.3 Mob Rendering
+- Simple box models (like classic Minecraft):
+  - Body: rectangular prism
+  - Head: cube
+  - Legs: 4 thin boxes (animated walking)
+- Per-mob vertex colors or simple textures
+
+---
+
+## 📦 Phase 9: Environment & Polish
+
+### 9.1 Sky & Lighting
+- Gradient sky (blue to light blue, darker at top)
+- Sun position affects ambient light
+- Day/night cycle (20 minutes real time = 1 MC day)
+- Torch light (point light) — stretch goal
+
+### 9.2 Clouds
+- Flat cloud plane at y=128
+- 2D noise-generated cloud pattern
+- Slow drift animation
+- Semi-transparent white
+
+### 9.3 Furnace (Smelting)
+- Input slot + Fuel slot → Output
+- Smelt iron ore → Iron Ingot
+- Smelt gold ore → Gold Ingot
+- Fuel: planks, logs, coal
+- Progress bar animation
+
+### 9.4 Sound Effects (stretch)
+- Block break/place sounds
+- Walking sounds
+- Background music
+
+---
+
+## 📁 File Structure
+
+```
+src/
+├── main.ts                 # Entry point, game loop
+├── engine/
+│   ├── Renderer.ts         # Three.js setup, render loop
+│   ├── InputManager.ts     # Keyboard + mouse input
+│   ├── Physics.ts          # AABB collision, gravity
+│   └── Camera.ts           # First-person camera
+├── world/
+│   ├── World.ts            # Chunk management
+│   ├── Chunk.ts            # Chunk data + mesh generation
+│   ├── ChunkMesher.ts      # Greedy meshing algorithm
+│   ├── WorldGenerator.ts   # Terrain, caves, ores, trees
+│   ├── BlockRegistry.ts    # Block definitions
+│   └── TextureAtlas.ts     # Texture atlas loader
+├── player/
+│   ├── Player.ts           # Player entity
+│   ├── PlayerController.ts # Movement, interaction
+│   └── Raycaster.ts        # Block targeting
+├── inventory/
+│   ├── Inventory.ts        # Inventory data structure
+│   ├── InventoryUI.ts      # HTML/CSS inventory screen
+│   ├── HotbarUI.ts         # Hotbar HUD
+│   └── CraftingSystem.ts   # Recipe matching
+├── items/
+│   ├── ItemRegistry.ts     # All items
+│   ├── ToolItem.ts         # Tool logic
+│   └── ArmorItem.ts        # Armor logic
+├── entities/
+│   ├── Entity.ts           # Base entity
+│   ├── ItemEntity.ts       # Dropped items
+│   ├── Cow.ts              # Cow mob
+│   ├── Pig.ts              # Pig mob
+│   ├── Sheep.ts            # Sheep mob
+│   └── MobAI.ts            # AI behaviors
+├── ui/
+│   ├── CrosshairUI.ts      # Crosshair
+│   ├── HealthUI.ts         # Health bar
+│   ├── BreakProgressUI.ts  # Mining progress
+│   └── CraftingTableUI.ts  # 3x3 crafting UI
+└── utils/
+    ├── noise.ts            # Simplex noise wrapper
+    ├── math.ts             # Vector helpers
+    └── constants.ts        # Game constants
+```
+
+---
+
+## 🎯 Implementation Priority
+
+| Priority | Phase | Estimated Effort |
+|----------|-------|-----------------|
+| 🔴 P0 | Phase 1: Core Engine | Foundation — do first |
+| 🔴 P0 | Phase 2: Block Interaction | Core gameplay |
+| 🔴 P0 | Phase 3: World Generation | Interesting world |
+| 🟡 P1 | Phase 4: Inventory | Item management |
+| 🟡 P1 | Phase 5: Crafting | Progression |
+| 🟡 P1 | Phase 6: Tools | Mining progression |
+| 🟢 P2 | Phase 7: Armor | Combat |
+| 🟢 P2 | Phase 8: Animals | Life in world |
+| 🟢 P2 | Phase 9: Polish | Atmosphere |
+
+---
+
+## ⚡ Performance Targets
+
+- **60 FPS** stable at render distance 8 chunks
+- **< 2s** chunk mesh generation
+- **< 100MB** RAM for loaded world
+- Greedy meshing reduces face count by ~80%
+- Worker threads for chunk generation (stretch)
+
+---
+
+## 🔑 Key Technical Decisions
+
+1. **Three.js vanilla** (not R3F) — max control for game performance
+2. **Greedy meshing** — critical for voxel rendering performance
+3. **Chunk-based loading** — only active chunks in memory/GPU
+4. **HTML/CSS UI** — inventory/crafting as DOM overlays (simple, flexible)
+5. **Fixed timestep physics** — consistent physics regardless of FPS
+6. **Texture atlas** — single GPU texture for all blocks
+7. **TypeScript** — type safety for complex game systems
